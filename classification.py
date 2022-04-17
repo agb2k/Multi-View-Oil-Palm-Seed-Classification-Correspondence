@@ -1,4 +1,3 @@
-# Working file for submission
 import PythonSIFT
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import ToTensor, Lambda
@@ -18,30 +17,22 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-# Dealing with the data
-trainSet_path = 'Dataset/Train'
-testSet_path = 'Dataset/Test'
-
-# 1. Pre-processing
-
-
-# 2. Object Detection -> Reuse existing code
-
-
-# 3. Feature extraction -> SIFT for point-based features, HOG etc. for patch-based features, Correspondence ->
-# Homography, Fundamental Matrix
-
-
-# 4. Deep learning model -> AlexNet, Transfer Learning
+import torchvision.models
 
 # List of file names
-list_good_train_seeds = sorted(os.listdir(trainSet_path + '/GoodSeed/'))
+# trainSet_path = 'Dataset/Train'
+# testSet_path = 'Dataset/Test'
+#
+# list_good_train_seeds = sorted(os.listdir(trainSet_path + '/GoodSeed/'))
+# list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
+#
+# list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
+# list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
-list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
-
-list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
-list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
+import os
+list_good_seeds = sorted(os.listdir('Multiview_jpg/Good seeds'))
+list_bad_seeds = sorted(os.listdir('Multiview_jpg/Bad seeds'))
+print(list_bad_seeds)
 
 # Creating CSV files
 with open('CSV/testData.csv', 'w', newline='') as file:
@@ -285,5 +276,3 @@ with torch.no_grad():
         correct += (predicted == labels).sum().item()
 
 print("Accuracy: ", correct / total)
-
-# 5. Evaluate results with various metrics
