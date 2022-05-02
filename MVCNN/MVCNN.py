@@ -1,8 +1,13 @@
 import copy
 import csv
-import time
 
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import sys
+import os
+import time
+
 import torch
 from PIL import Image
 from sklearn.metrics import accuracy_score
@@ -18,6 +23,9 @@ from torchvision.io import read_image
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.sampler import SubsetRandomSampler
+
 from torchvision import models
 
 from torchvision.io import read_image
@@ -72,6 +80,39 @@ with open('../CSV/trainingData.csv', 'w', newline='') as file:
     # create training data with the rest of the images of bad seeds
     for filename in list_bad_train_seeds:
         writer.writerow([filename, 0])
+
+
+def segment(img):
+    img = cv2.imread(img)
+    y = img.shape[0] // 11
+    x = img.shape[1] // 6
+    h = img.shape[0] // 11 * 7
+    w = int(img.shape[1] // 3 * 2)
+    image = img.copy()[y:y + h, x:x + w]
+    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    im_remove_noise = cv2.fastNlMeansDenoising(img_gray, 8, 8, 7, 21)
+    edged = cv2.Canny(im_remove_noise, 130, 240)
+
+    # applying closing function
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8, 8))
+    closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
+
+    plt.imshow(closed)
+    cv2.waitKey(0)
+
+    min_threshold_area = 500  # threshold area
+    max_threshold_area = 50000
+
+    # finding_contours
+    (cnts, _) = cv2.findContours(closed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+    for c in cnts:
+        area = cv2.contourArea(c)
+        # if max_threshold_area > area > min_threshold_area:
+        peri = 0.1 * cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        cv2.drawContours(image, [approx], -1, (0, 255, 0), 1)
+        print(area)
 
 
 class OilPalmSeedsDataset(Dataset):
