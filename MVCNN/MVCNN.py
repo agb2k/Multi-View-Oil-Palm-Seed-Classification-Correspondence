@@ -56,6 +56,8 @@ class_weights = {
 class_id_map = {'Bad Seed': 0,
                 'Good Seed': 1}
 
+h = nn.Sigmoid()
+
 # Creating CSV files
 with open('../CSV/testData.csv', 'w', newline='') as file:
     writer = csv.writer(file)
@@ -82,39 +84,6 @@ with open('../CSV/trainingData.csv', 'w', newline='') as file:
         writer.writerow([filename, 0])
 
 
-def segment(img):
-    img = cv2.imread(img)
-    y = img.shape[0] // 11
-    x = img.shape[1] // 6
-    h = img.shape[0] // 11 * 7
-    w = int(img.shape[1] // 3 * 2)
-    image = img.copy()[y:y + h, x:x + w]
-    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    im_remove_noise = cv2.fastNlMeansDenoising(img_gray, 8, 8, 7, 21)
-    edged = cv2.Canny(im_remove_noise, 130, 240)
-
-    # applying closing function
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8, 8))
-    closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
-
-    plt.imshow(closed)
-    cv2.waitKey(0)
-
-    min_threshold_area = 500  # threshold area
-    max_threshold_area = 50000
-
-    # finding_contours
-    (cnts, _) = cv2.findContours(closed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-
-    for c in cnts:
-        area = cv2.contourArea(c)
-        # if max_threshold_area > area > min_threshold_area:
-        peri = 0.1 * cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        cv2.drawContours(image, [approx], -1, (0, 255, 0), 1)
-        print(area)
-
-
 class OilPalmSeedsDataset(Dataset):
     def __init__(self, df, base_path, transform=None, target_transform=None):
         self.df = df
@@ -133,9 +102,12 @@ class OilPalmSeedsDataset(Dataset):
             img_path = os.path.join(self.base_path, 'GoodSeed/', self.df.iloc[idx, 0])
         elif label == 0:
             img_path = os.path.join(self.base_path, 'BadSeed/', self.df.iloc[idx, 0])
+
         image = Image.open(img_path).convert('RGB')
 
-        # if any transformation is needed, e.g., to resize the image
+        # images = np.array(seed_segment(img_path), dtype="object")
+
+        # for image in images:
         if self.transform:
             image = self.transform(image)
         if self.target_transform:
@@ -149,6 +121,7 @@ class OilPalmSeedsDataset(Dataset):
 # You will have to do something more appropriate and relevant
 transform = transforms.Compose(
     [
+        # transforms.ToPILImage(),
         transforms.Resize([224, 224]),
         transforms.ToTensor()
 
@@ -156,6 +129,7 @@ transform = transforms.Compose(
 
 test_transform = transforms.Compose(
     [
+        # transforms.ToPILImage(),
         transforms.Resize([224, 224]),
         transforms.ToTensor()
 
@@ -213,12 +187,8 @@ class MVCNN(nn.Module):
 
 
 model = MVCNN(num_classes=2, pretrained=True)
-print(model)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
 from torch.autograd import Variable
 
@@ -257,8 +227,9 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
                 labels = data['label']
                 inputs, labels = Variable(inputs), Variable(labels)
                 inputs = inputs.type(torch.FloatTensor).to(device)
-                labels = labels.type(torch.LongTensor).to(device)
+                labels = labels.type(torch.FloatTensor).to(device)
                 inputs = torch.unsqueeze(inputs, 1)
+
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
@@ -267,9 +238,12 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
                 with torch.set_grad_enabled(phase == 'train'):
                     # Get model outputs and calculate loss
                     outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    # Get model predictions
+                    print(outputs)
+                    exit()
                     _, preds = torch.max(outputs, 1)
+                    # labels = torch.Tensor([0, 1]).to(torch.long).to(device)
+                    # labels = torch.unsqueeze(labels, 2)
+                    loss = criterion(input=h(_), target=labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -286,10 +260,12 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
             epoch_acc = running_corrects.double() / len(dataloaders[phase])
             all_labels = torch.cat(all_labels, 0)
             all_preds = torch.cat(all_preds, 0)
-            epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.cpu().numpy(),
+            epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.detach().numpy(),
                                                 sample_weight=compute_sample_weight(class_weights,
                                                                                     all_labels.cpu().numpy()))
-
+            # epoch_weighted_acc = accuracy_score(all_labels.detach().numpy(), all_preds.detach().numpy(),
+            #                                     sample_weight=compute_sample_weight(class_weights,
+            #                                                                         all_labels.detach().numpy()))
             print('{} Loss: {:.4f} - Acc: {:.4f} - Weighted Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc,
                                                                                 epoch_weighted_acc))
 
@@ -299,8 +275,6 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
                 best_model_wts = copy.deepcopy(model.state_dict())
             if phase == 'val':
                 val_acc_history.append(epoch_weighted_acc)
-
-        print()
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -317,8 +291,8 @@ for param in model.features.parameters():
 model.to(device)
 EPOCHS = 30
 weight = torch.tensor([0.5, 0.5]).to(device)
-criterion = nn.CrossEntropyLoss(weight=weight)
-optimizer = optim.Adam(model.classifier.parameters(), lr=0.1)
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.classifier.parameters(), lr=0.0005)
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                      optimizer=optimizer, num_epochs=EPOCHS)
@@ -327,8 +301,8 @@ for param in model.parameters():
     param.requires_grad = True
 
 EPOCHS = 30
-criterion = nn.CrossEntropyLoss(weight=weight)
-optimizer = optim.Adam(model.parameters(), lr=0.01)  # We use a smaller learning rate
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion, optimizer=optimizer,
                                      num_epochs=EPOCHS)
