@@ -1,13 +1,11 @@
 import copy
 import csv
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 import os
 import time
-
 import torch
 from PIL import Image
 from glob2 import glob
@@ -26,21 +24,21 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
-
 from torchvision import models
-
 from torchvision.io import read_image
 
+# Base path for images
 trainSet_path = '../DatasetTest1/Segmented/Train'
-#testSet_path = '../DatasetTest1/Test'
+testSet_path = '../DatasetTest1/Test'
 
+# List of training and test images
 list_good_train_seeds = sorted(os.listdir(trainSet_path + '/GoodSeed'))
 list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
+list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
+list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
-#list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
-#list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
-
+# Compute weight based on classes
 def compute_sample_weight(class_weights, y):
     assert isinstance(class_weights, dict)
     result = np.array([class_weights[i] for i in y])
@@ -57,20 +55,18 @@ class_weights = {
 class_id_map = {'Bad Seed': 0,
                 'Good Seed': 1}
 
-h = nn.Sigmoid()
-
 # Creating CSV files
-# with open('../CSV/testData.csv', 'w', newline='') as file:
-#     writer = csv.writer(file)
-#     writer.writerow(["image_name", "label"])
-#
-#     # create test data with the first 200 images of good seeds
-#     for filename in list_good_test_seeds:
-#         writer.writerow([filename, 1])
-#
-#     # create test data with the first 200 images of bad seeds
-#     for filename in list_bad_test_seeds:
-#         writer.writerow([filename, 0])
+with open('../CSV/testData.csv', 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["image_name", "label"])
+
+    # create test data with the first 200 images of good seeds
+    for filename in list_good_test_seeds:
+        writer.writerow([filename, 1])
+
+    # create test data with the first 200 images of bad seeds
+    for filename in list_bad_test_seeds:
+        writer.writerow([filename, 0])
 
 with open('../CSV/trainingData.csv', 'w', newline='') as file:
     writer = csv.writer(file)
@@ -85,6 +81,7 @@ with open('../CSV/trainingData.csv', 'w', newline='') as file:
         writer.writerow([filename, 0])
 
 
+# Dataset class
 class OilPalmSeedsDataset(Dataset):
     def __init__(self, df, base_path, transform=None, target_transform=None):
         self.df = df
@@ -106,9 +103,7 @@ class OilPalmSeedsDataset(Dataset):
 
         image = Image.open(img_path).convert('RGB')
 
-        # images = np.array(seed_segment(img_path), dtype="object")
-
-        # for image in images:
+        # Transformations done on the image
         if self.transform:
             image = self.transform(image)
         if self.target_transform:
@@ -118,8 +113,7 @@ class OilPalmSeedsDataset(Dataset):
         return sample
 
 
-# Note that the following transforms are not necessarily applicable to the raw images in our oil palm seeds dataset
-# You will have to do something more appropriate and relevant
+# Transformations done on the images
 transform = transforms.Compose(
     [
         # transforms.ToPILImage(),
@@ -136,7 +130,8 @@ test_transform = transforms.Compose(
 
     ])
 
-# load the training csv file in terms of annotations to dataframe and randomly split it to training and validation sets respectively
+# load the training csv file in terms of annotations to dataframe and
+# #randomly split it to training and validation sets respectively
 trainvaldf = pd.read_csv("../CSV/trainingdata.csv")
 traindf, valdf = np.split(trainvaldf.sample(frac=1, random_state=42), [int(.8 * len(trainvaldf))])
 base_path = '../DatasetTest1/Segmented/Train/'
@@ -149,20 +144,23 @@ print('training set', len(train_dataset))
 print('val set', len(val_dataset))
 
 # load the testing csv file as dataframe
-# testdf = pd.read_csv("../CSV/testData.csv")
-# test_dataset = OilPalmSeedsDataset(testdf, base_path=base_path, transform=transforms.Resize([224, 224]))
-# print('test set', len(test_dataset))
+testdf = pd.read_csv("../CSV/testData.csv")
+test_dataset = OilPalmSeedsDataset(testdf, base_path=base_path, transform=transforms.Resize([224, 224]))
+print('test set', len(test_dataset))
 
+# Loads datasets into dataloader
 train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0)
 val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=0)
-# test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=True, num_workers=0)
 
 
+# Depp Learning Model
 class MVCNN(nn.Module):
     def __init__(self, num_classes=1000, pretrained=True):
         super(MVCNN, self).__init__()
         resnet = models.resnet34(pretrained=pretrained)
+        # using the initial features from resnet
         fc_in_features = resnet.fc.in_features
+
         self.features = nn.Sequential(*list(resnet.children())[:-1])
         self.classifier = nn.Sequential(
             nn.Dropout(),
@@ -177,6 +175,7 @@ class MVCNN(nn.Module):
     def forward(self, inputs):
         inputs = inputs.transpose(0, 1)
         view_features = []
+        # pooling
         for view_batch in inputs:
             view_batch = self.features(view_batch)
             view_batch = view_batch.view(view_batch.shape[0], view_batch.shape[1:].numel())
@@ -187,6 +186,7 @@ class MVCNN(nn.Module):
         return outputs
 
 
+# initializing the model with the number of classes we have
 model = MVCNN(num_classes=2, pretrained=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device)
@@ -194,19 +194,22 @@ model.to(device)
 from torch.autograd import Variable
 
 # Training with Validation
-n_epochs = 10  # just to test the code
 data_loaders = {'train': train_dataloader, 'val': val_dataloader}
 data_lengths = {'train': len(train_dataset), 'val': len(val_dataset)}
 
 
+# Training function
 def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
+    # To calculate the time taken for training
     since = time.time()
 
     val_acc_history = []
 
+    # save best model weights for the fine tuning part
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
 
+# training loop
     for epoch in range(1, num_epochs + 1):
         print('Epoch {}/{}'.format(epoch, num_epochs))
         print('-' * 10)
@@ -233,49 +236,42 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
                 labels = labels.type(torch.FloatTensor).to(device)
                 inputs = torch.unsqueeze(inputs, 1)
 
-                # zero the parameter gradients
-
-
-                # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
                     # Get model outputs and calculate loss
                     outputs = model(inputs)
                     maxi, preds = torch.max(outputs, 1)
-
                     preds = preds.type(torch.FloatTensor).to(device)
-
-                    # labels = torch.Tensor([0, 1]).to(torch.long).to(device)
-                    # labels = torch.unsqueeze(labels, 2)
-
-                    loss = criterion(input=maxi.sigmoid(), target=labels)
+                    loss = criterion(input=maxi, target=labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
+                # Validation part without grad
                 if phase == 'val':
                     with torch.no_grad():
                         outputs = model(inputs)
                         maxi, preds = torch.max(outputs, 1)
                         preds = preds.type(torch.FloatTensor).to(device)
-                        val_loss = criterion(input=maxi.sigmoid(), target=labels)
+                        val_loss = criterion(input=maxi, target=labels)
                         val_acc = torch.sum(preds == labels.data)
 
-
                     # statistics
+                if phase == 'val':
                     val_running_loss += val_loss.item()
                     val_running_corrects += val_acc
+                    all_preds.append(preds)
+                    all_labels.append(labels)
+                else:
                     running_loss += loss.item()
                     running_corrects += torch.sum(preds == labels.data)
-
-                all_preds.append(preds)
-                all_labels.append(labels)
-                if(phase == 'train'):
                     epoch_loss = running_loss / len(dataloaders[phase])
                     epoch_acc = running_corrects / len(dataloaders[phase])
-                elif(phase == 'val'):
+                    all_preds.append(preds)
+                    all_labels.append(labels)
+                if phase == 'val':
                     epoch_loss = val_running_loss / len(dataloaders[phase])
                     epoch_acc = val_running_corrects / len(dataloaders[phase])
 
@@ -284,15 +280,11 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
             epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.cpu().numpy(),
                                                 sample_weight=compute_sample_weight(class_weights,
                                                                                     all_labels.cpu().numpy()))
-            # epoch_weighted_acc = accuracy_score(all_labels.detach().numpy(), all_preds.detach().numpy(),
-            #                                     sample_weight=compute_sample_weight(class_weights,
-            #                                                                         all_labels.detach().numpy()))
+
             print('{} Loss: {:.4f} - Acc: {:.4f} - Weighted Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc,
                                                                                 epoch_weighted_acc))
 
-
-
-            # deep copy the model
+            # save the best weights
             if phase == 'val' and epoch_weighted_acc > best_acc:
                 best_acc = epoch_weighted_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
@@ -311,10 +303,11 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
 for param in model.features.parameters():
     param.requires_grad = False
 
+# initial call to train the classifier
 model.to(device)
 EPOCHS = 30
-criterion = nn.BCELoss()
-optimizer = optim.Adam(model.classifier.parameters(), lr=0.0005)
+criterion = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(model.classifier.parameters(), lr=0.0007)
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                      optimizer=optimizer, num_epochs=EPOCHS)
@@ -322,19 +315,13 @@ model, val_acc_history = train_model(model=model, dataloaders=data_loaders, crit
 for param in model.parameters():
     param.requires_grad = True
 
+# Second Call for fine-tuning of the entire network
 EPOCHS = 30
-criterion = nn.BCELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
+criterion = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.00007)  # We use a smaller learning rate
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion, optimizer=optimizer,
                                      num_epochs=EPOCHS)
-
+# saving the model
 torch.save(model.state_dict(), '../MVCNN/mvcnn.pt')
-#
-# def test_pred(filename, imgdir, model, device):
-#     transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
-#     seed_names = sorted(os.listdir(trainSet_path + '/GoodSeed'))
-#     plug = torch.stack([transform(Image.open(fname).convert('RGB')) for fname in seed_names]).unsqueeze(0)
-#     plug = plug.to(device)
-#     pred = torch.nn.functional.softmax(model(plug)).argmax().item()
-#     return pred, {v:k for k,v in class_id_map.items()}[pred]
+
