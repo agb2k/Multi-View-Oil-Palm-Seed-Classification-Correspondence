@@ -10,9 +10,9 @@ import time
 
 import torch
 from PIL import Image
+from glob2 import glob
 from sklearn.metrics import accuracy_score
 from sklearn.utils import compute_sample_weight
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import ToTensor, Lambda
 import torchvision.transforms as transforms
@@ -32,14 +32,13 @@ from torchvision import models
 from torchvision.io import read_image
 
 trainSet_path = '../DatasetTest1/Segmented/Train'
-# testSet_path = '../DatasetTest1/Test'
+#testSet_path = '../DatasetTest1/Test'
 
 list_good_train_seeds = sorted(os.listdir(trainSet_path + '/GoodSeed'))
 list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
 
-
-# list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
-# list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
+#list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
+#list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
 
 def compute_sample_weight(class_weights, y):
@@ -156,13 +155,11 @@ print('val set', len(val_dataset))
 
 train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0)
 val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=0)
-
-
 # test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=True, num_workers=0)
 
 
 class MVCNN(nn.Module):
-    def __init__(self, num_classes=1, pretrained=True):
+    def __init__(self, num_classes=1000, pretrained=True):
         super(MVCNN, self).__init__()
         resnet = models.resnet34(pretrained=pretrained)
         fc_in_features = resnet.fc.in_features
@@ -174,7 +171,7 @@ class MVCNN(nn.Module):
             nn.Dropout(),
             nn.Linear(2048, 2048),
             nn.ReLU(inplace=True),
-            nn.Linear(2048, num_classes),
+            nn.Linear(2048, num_classes)
         )
 
     def forward(self, inputs):
@@ -190,17 +187,19 @@ class MVCNN(nn.Module):
         return outputs
 
 
-model = MVCNN(num_classes=1, pretrained=True)
+model = MVCNN(num_classes=2, pretrained=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
 from torch.autograd import Variable
 
+# Training with Validation
+n_epochs = 10  # just to test the code
 data_loaders = {'train': train_dataloader, 'val': val_dataloader}
 data_lengths = {'train': len(train_dataset), 'val': len(val_dataset)}
 
 
-def train_model(model, dataloaders, criterion, optimizer, num_epochs=40):
+def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
     since = time.time()
 
     val_acc_history = []
@@ -219,6 +218,8 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=40):
             else:
                 model.eval()  # Set model to evaluate mode
 
+            val_running_loss = 0.0
+            val_running_corrects = 0
             running_loss = 0.0
             running_corrects = 0
             all_preds = []
@@ -233,40 +234,63 @@ def train_model(model, dataloaders, criterion, optimizer, num_epochs=40):
                 inputs = torch.unsqueeze(inputs, 1)
 
                 # zero the parameter gradients
-                optimizer.zero_grad()
+
 
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
                     # Get model outputs and calculate loss
                     outputs = model(inputs)
-                    _, preds = torch.max(outputs, 1)
-                    outputs = outputs.flatten()
-                    loss = criterion(outputs, target=labels)
+                    maxi, preds = torch.max(outputs, 1)
+
+                    preds = preds.type(torch.FloatTensor).to(device)
+
+                    # labels = torch.Tensor([0, 1]).to(torch.long).to(device)
+                    # labels = torch.unsqueeze(labels, 2)
+
+                    loss = criterion(input=maxi.sigmoid(), target=labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
+                        optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
+                if phase == 'val':
+                    with torch.no_grad():
+                        outputs = model(inputs)
+                        maxi, preds = torch.max(outputs, 1)
+                        preds = preds.type(torch.FloatTensor).to(device)
+                        val_loss = criterion(input=maxi.sigmoid(), target=labels)
+                        val_acc = torch.sum(preds == labels.data)
 
-                # statistics
-                running_loss += loss.item()
 
-                running_corrects += torch.sum(preds == labels.data)
+                    # statistics
+                    val_running_loss += val_loss.item()
+                    val_running_corrects += val_acc
+                    running_loss += loss.item()
+                    running_corrects += torch.sum(preds == labels.data)
 
                 all_preds.append(preds)
                 all_labels.append(labels)
+                if(phase == 'train'):
+                    epoch_loss = running_loss / len(dataloaders[phase])
+                    epoch_acc = running_corrects / len(dataloaders[phase])
+                elif(phase == 'val'):
+                    epoch_loss = val_running_loss / len(dataloaders[phase])
+                    epoch_acc = val_running_corrects / len(dataloaders[phase])
 
-            epoch_loss = running_loss / len(dataloaders[phase])
-            epoch_acc = running_corrects.double() / len(dataloaders[phase])
             all_labels = torch.cat(all_labels, 0)
             all_preds = torch.cat(all_preds, 0)
             epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.cpu().numpy(),
                                                 sample_weight=compute_sample_weight(class_weights,
                                                                                     all_labels.cpu().numpy()))
-
+            # epoch_weighted_acc = accuracy_score(all_labels.detach().numpy(), all_preds.detach().numpy(),
+            #                                     sample_weight=compute_sample_weight(class_weights,
+            #                                                                         all_labels.detach().numpy()))
             print('{} Loss: {:.4f} - Acc: {:.4f} - Weighted Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc,
                                                                                 epoch_weighted_acc))
+
+
 
             # deep copy the model
             if phase == 'val' and epoch_weighted_acc > best_acc:
@@ -288,10 +312,9 @@ for param in model.features.parameters():
     param.requires_grad = False
 
 model.to(device)
-EPOCHS = 40
-
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.classifier.parameters(), lr=0.0005, weight_decay=5e-4)
+EPOCHS = 30
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.classifier.parameters(), lr=0.0005)
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                      optimizer=optimizer, num_epochs=EPOCHS)
@@ -299,9 +322,19 @@ model, val_acc_history = train_model(model=model, dataloaders=data_loaders, crit
 for param in model.parameters():
     param.requires_grad = True
 
-EPOCHS = 40
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.00005, weight_decay=5e-4)  # We use a smaller learning rate
+EPOCHS = 30
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
 
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion, optimizer=optimizer,
                                      num_epochs=EPOCHS)
+
+torch.save(model.state_dict(), '../MVCNN/mvcnn.pt')
+#
+# def test_pred(filename, imgdir, model, device):
+#     transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+#     seed_names = sorted(os.listdir(trainSet_path + '/GoodSeed'))
+#     plug = torch.stack([transform(Image.open(fname).convert('RGB')) for fname in seed_names]).unsqueeze(0)
+#     plug = plug.to(device)
+#     pred = torch.nn.functional.softmax(model(plug)).argmax().item()
+#     return pred, {v:k for k,v in class_id_map.items()}[pred]
