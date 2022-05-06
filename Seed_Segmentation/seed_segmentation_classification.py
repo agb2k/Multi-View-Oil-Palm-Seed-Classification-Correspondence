@@ -11,6 +11,10 @@ import csv
 
 
 def seed_segment(image, path_save, Set, view):
+    csv_array = []
+    path_source = image
+    
+    
     
     if type(image) == str:
         image = cv2.imread(image)
@@ -58,7 +62,7 @@ def seed_segment(image, path_save, Set, view):
         
         if max_threshold_area > area > min_threshold_area and w>50 and h>50 and w<450 and h<600:
             cv2.rectangle(copy, (x, y), (x + w, y + h), (0, 0, 255), 3)
-            seed_boxes.append(((x, y), (x + w, y + h)))
+            seed_boxes.append([x, y, x + w, y + h])
             print(seed_boxes[seed_idx])
             seed_idx += 1 
             idx+=1 
@@ -66,17 +70,27 @@ def seed_segment(image, path_save, Set, view):
             path = os.path.join(path_save,"Set "+ str(Set) + " - " + view + " Segmented Seed " + str(idx) + '.png')
             cv2.imwrite(path, new_img)
             print(path)
+            
+            #csv output
+            csv_array.append([path_source, path, x, y, x+w, y+h])
+            
+            with open(outcsv, 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(csv_array)
+
     # Uncomment to save every seed individually
      
 
 
     # 		cv2.imshow("t",new_img)
-    cv2.namedWindow("boxed", cv2.WINDOW_NORMAL)
-    cv2.imshow("boxed",copy)
-    cv2.waitKey(0) & 0xFF
-    cv2.destroyAllWindows()
+    # cv2.namedWindow("boxed", cv2.WINDOW_NORMAL)
+    # cv2.imshow("boxed",copy)
+    # cv2.waitKey(0) & 0xFF
+    # cv2.destroyAllWindows()
     
-    return copy, seed_boxes
+    
+    
+     
 
 
 '''
@@ -160,16 +174,27 @@ path_save = "F:\\CompV\\Multiview_jpg\\Good seeds\\" + "Good seeds - set 9"
 image_src_box, seed_src_boxes = seed_segment(path_image, path_save, Set, view)
 
 '''
+CSV_SEED_INDIVIDUAL_HEADER = ["Source_path", "Seed_output_path", "top_left_x", "top_left_y", "bottom_right_x", "bottom_right_y"]
 
-
+#dir
 os.chdir(r"F:/CompV/Multiview_jpg/Good seeds")
 
+#csv output
+outpath = r"F:/CompV/Multiview_jpg/Good seeds" 
+outcsv = os.path.join(outpath, 'Good Seeds.csv')
+if not os.path.exists(outcsv):
+    with open(outcsv, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(CSV_SEED_INDIVIDUAL_HEADER)
 
-j=9
+
+
+j=1
 while j <11:
     i=1
     while i < 6:
         print("Segmenting...")
+        #output folder
         if not os.path.exists('Good seeds - set ' + str(j)):
             os.mkdir('Good seeds - set ' + str(j))
         path_save = "F:\\CompV\\Multiview_jpg\\Good seeds\\" + "Good seeds - set " + str(j) 
@@ -177,33 +202,50 @@ while j <11:
         if i == 1:
             print("Segmenting left")
             trgt = "left"
-            path_trgt = (trgt + "_S" + str(j) + ".jpg") 
+
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
             seed_segment(path_trgt, path_save, str(j), trgt)
+          
+  
             
         elif i == 2:
             print("Segmenting right")
             trgt = "right"
-            path_trgt = (trgt + "_S" + str(j) + ".jpg") 
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
             seed_segment(path_trgt, path_save, str(j), trgt)
-            
+        
         elif i==3:
             print("Segmenting rear")
             trgt = "rear"
-            path_trgt = (trgt + "_S" + str(j) + ".jpg") 
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
             seed_segment(path_trgt, path_save, str(j), trgt)
+
             
         elif i == 4:
             print("segmenting front")
             trgt = "front"
-            path_trgt = (trgt + "_S" + str(j) + ".jpg") 
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
             seed_segment(path_trgt, path_save, str(j), trgt)
             
         elif i == 5:
             print("segmenting top")
             trgt = "top"
-            path_trgt = (trgt + "_S" + str(j) + ".jpg") 
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
             seed_segment(path_trgt, path_save, str(j), trgt)
             
         i += 1
-    print("check")
+
     j += 1
+
+
+
+
+
+    
+
+
