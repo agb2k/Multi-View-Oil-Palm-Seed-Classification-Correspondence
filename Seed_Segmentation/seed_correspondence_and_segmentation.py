@@ -46,12 +46,11 @@ def seed_segment(image):
     
     copy = image.copy()
     for c in cnts:
-    		area = cv2.contourArea(c)
-    	#if max_threshold_area > area > min_threshold_area:
-    		peri = 0.1*cv2.arcLength(c, True)
-    		approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-    		cv2.drawContours(copy, [approx], -1, (0, 255, 0), 1)
-    		#print(area)
+        area = cv2.contourArea(c)
+        peri = 0.1*cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        cv2.drawContours(copy, [approx], -1, (0, 255, 0), 1)
+        #print(area)
     
     
      
@@ -294,8 +293,8 @@ def find_correspondance(path_ref, path_trgt):
 
 # Select the images path based on the images dir
 
-path_ref = 'Bad seeds/Set4/top_S4.jpg'
-path_trgt = 'Bad seeds/Set4/left_S4.jpg'
+path_ref = "...\\Multiview_jpg\\Bad seeds\\top_S4.jpg"# queryImage
+path_trgt ="...\\Multiview_jpg\\Bad seeds\\left_S4.jpg"# trainImage
 
 find_correspondance(path_ref, path_trgt)
 
