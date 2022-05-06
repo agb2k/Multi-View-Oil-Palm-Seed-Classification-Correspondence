@@ -12,7 +12,7 @@ All python codes include image_correspondence.py, seed_correspondence_and_segmen
 
 ## image_correspondence.py
 
-##### To run the code, change the file location to your directory location where the ZIP file you have downloaded in lines 68, 88, 109, 130, 153, 172, 189, 210, 231 and 254.
+##### To run the code, change the file location in lines 68, 88, 109, 130, 153, 172, 189, 210, 231 and 254 to your directory location where the ZIP file you have downloaded.
 
 ##### While running the program, each output result will show at the terminal before the output images are displayed, thus, please close the previous output images to see the next output images.
 
@@ -21,7 +21,9 @@ All python codes include image_correspondence.py, seed_correspondence_and_segmen
 
 ## seed_correspondence_and_segmentation.py
 
-#####
+##### To run the code, change the file location in lines 296 and 297 to your directory location where the ZIP file you have downloaded.
+
+##### Each correspondence seeds are saved to the files.
 
 ```python
 import foobar
