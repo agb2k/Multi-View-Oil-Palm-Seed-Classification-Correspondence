@@ -1,5 +1,3 @@
-# M
-
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
