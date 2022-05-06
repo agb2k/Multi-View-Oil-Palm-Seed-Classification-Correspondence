@@ -21,13 +21,9 @@ All python codes include image_correspondence.py, seed_correspondence_and_segmen
 
 ## seed_correspondence_and_segmentation.py
 
-##### To run the code, change the file location in lines 296 and 297 to your directory location where the ZIP file you have downloaded.
-
-##### Each correspondence seeds are saved to the files.
-
-```python
-import foobar
-
-# returns 'words'
-foobar.pluralize('word')
-```
+##### To run the script:
+        1. change the directory to the Multiview_jpg folder
+        2. uncomment the wanted sets loop from line 290
+        3. Run the script
+##### The outputs are the segmented seeds corresponded from the top view to the target view
+    
