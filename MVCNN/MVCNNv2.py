@@ -325,7 +325,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.00007)  # We use a smaller learn
 model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion, optimizer=optimizer,
                                      num_epochs=EPOCHS)
 # saving the model
-torch.save(model.state_dict(), '../MVCNN/mvcnn.pt')
+torch.save(model.state_dict(), '../Models/mvcnn.pt')
 
 
 def predict(model, test_image_name):

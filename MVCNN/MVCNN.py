@@ -1,31 +1,27 @@
 import copy
 import csv
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import sys
+import glob
 import os
 import time
+
+import numpy as np
+import pandas as pd
 import torch
+import torch.nn as nn
+import torch.nn.functional as fn
+import torch.optim as optim
+import torchvision.transforms as transforms
 from PIL import Image
-from glob2 import glob
 from sklearn.metrics import accuracy_score
 from sklearn.utils import compute_sample_weight
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import ToTensor, Lambda
-import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
-import cv2
-import os
-import pandas as pd
-from torchvision.io import read_image
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision import models
-from torchvision.io import read_image
+from torch.autograd import Variable
+
+print(torch.cuda.is_available())
+
+# Change boolean to determine whether you should train or not
+trainBool = False
 
 # Base path for images
 trainSet_path = '../DatasetTest1/Segmented/Train'
@@ -52,8 +48,7 @@ class_weights = {
 }
 
 # Class labels to indices
-class_id_map = {'Bad Seed': 0,
-                'Good Seed': 1}
+class_id_map = {'Bad Seed': 0, 'Good Seed': 1}
 
 # Creating CSV files
 with open('../CSV/testData.csv', 'w', newline='') as file:
@@ -131,7 +126,7 @@ test_transform = transforms.Compose(
     ])
 
 # load the training csv file in terms of annotations to dataframe and
-# #randomly split it to training and validation sets respectively
+# randomly split it to training and validation sets respectively
 trainvaldf = pd.read_csv("../CSV/trainingdata.csv")
 traindf, valdf = np.split(trainvaldf.sample(frac=1, random_state=42), [int(.8 * len(trainvaldf))])
 base_path = '../DatasetTest1/Segmented/Train/'
@@ -191,137 +186,185 @@ model = MVCNN(num_classes=2, pretrained=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-from torch.autograd import Variable
+if trainBool:
+    # Training with Validation
+    data_loaders = {'train': train_dataloader, 'val': val_dataloader}
+    data_lengths = {'train': len(train_dataset), 'val': len(val_dataset)}
 
-# Training with Validation
-data_loaders = {'train': train_dataloader, 'val': val_dataloader}
-data_lengths = {'train': len(train_dataset), 'val': len(val_dataset)}
 
+    # Training function
+    def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
+        # To calculate the time taken for training
+        since = time.time()
 
-# Training function
-def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
-    # To calculate the time taken for training
-    since = time.time()
+        val_acc_history = []
 
-    val_acc_history = []
+        # save best model weights for the fine tuning part
+        best_model_wts = copy.deepcopy(model.state_dict())
+        best_acc = 0.0
 
-    # save best model weights for the fine tuning part
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
+        # training loop
+        for epoch in range(1, num_epochs + 1):
+            print('Epoch {}/{}'.format(epoch, num_epochs))
+            print('-' * 10)
 
-# training loop
-    for epoch in range(1, num_epochs + 1):
-        print('Epoch {}/{}'.format(epoch, num_epochs))
-        print('-' * 10)
+            # Each epoch has a training and validation phase
+            for phase in ['train', 'val']:
+                if phase == 'train':
+                    model.train()  # Set model to training mode
+                else:
+                    model.eval()  # Set model to evaluate mode
 
-        # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                model.train()  # Set model to training mode
-            else:
-                model.eval()  # Set model to evaluate mode
+                val_running_loss = 0.0
+                val_running_corrects = 0
+                running_loss = 0.0
+                running_corrects = 0
+                all_preds = []
+                all_labels = []
+                # Iterate over data.
+                for data in dataloaders[phase]:
+                    inputs = data['image']
+                    labels = data['label']
+                    inputs, labels = Variable(inputs), Variable(labels)
+                    inputs = inputs.type(torch.FloatTensor).to(device)
+                    labels = labels.type(torch.FloatTensor).to(device)
+                    inputs = torch.unsqueeze(inputs, 1)
 
-            val_running_loss = 0.0
-            val_running_corrects = 0
-            running_loss = 0.0
-            running_corrects = 0
-            all_preds = []
-            all_labels = []
-            # Iterate over data.
-            for data in dataloaders[phase]:
-                inputs = data['image']
-                labels = data['label']
-                inputs, labels = Variable(inputs), Variable(labels)
-                inputs = inputs.type(torch.FloatTensor).to(device)
-                labels = labels.type(torch.FloatTensor).to(device)
-                inputs = torch.unsqueeze(inputs, 1)
-
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    # Get model outputs and calculate loss
-                    outputs = model(inputs)
-                    maxi, preds = torch.max(outputs, 1)
-                    preds = preds.type(torch.FloatTensor).to(device)
-                    loss = criterion(input=maxi, target=labels)
-
-                    # backward + optimize only if in training phase
-                    if phase == 'train':
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                # Validation part without grad
-                if phase == 'val':
-                    with torch.no_grad():
+                    # track history if only in train
+                    with torch.set_grad_enabled(phase == 'train'):
+                        # Get model outputs and calculate loss
                         outputs = model(inputs)
                         maxi, preds = torch.max(outputs, 1)
                         preds = preds.type(torch.FloatTensor).to(device)
-                        val_loss = criterion(input=maxi, target=labels)
-                        val_acc = torch.sum(preds == labels.data)
+                        loss = criterion(input=maxi, target=labels)
 
-                    # statistics
+                        # backward + optimize only if in training phase
+                        if phase == 'train':
+                            optimizer.zero_grad()
+                            loss.backward()
+                            optimizer.step()
+                    # Validation part without grad
+                    if phase == 'val':
+                        with torch.no_grad():
+                            outputs = model(inputs)
+                            maxi, preds = torch.max(outputs, 1)
+                            preds = preds.type(torch.FloatTensor).to(device)
+                            val_loss = criterion(input=maxi, target=labels)
+                            val_acc = torch.sum(preds == labels.data)
+
+                        # statistics
+                    if phase == 'val':
+                        val_running_loss += val_loss.item()
+                        val_running_corrects += val_acc
+                        all_preds.append(preds)
+                        all_labels.append(labels)
+                    else:
+                        running_loss += loss.item()
+                        running_corrects += torch.sum(preds == labels.data)
+                        epoch_loss = running_loss / len(dataloaders[phase])
+                        epoch_acc = running_corrects / len(dataloaders[phase])
+                        all_preds.append(preds)
+                        all_labels.append(labels)
+                    if phase == 'val':
+                        epoch_loss = val_running_loss / len(dataloaders[phase])
+                        epoch_acc = val_running_corrects / len(dataloaders[phase])
+
+                all_labels = torch.cat(all_labels, 0)
+                all_preds = torch.cat(all_preds, 0)
+                epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.cpu().numpy(),
+                                                    sample_weight=compute_sample_weight(class_weights,
+                                                                                        all_labels.cpu().numpy()))
+
+                print('{} Loss: {:.4f} - Acc: {:.4f} - Weighted Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc,
+                                                                                    epoch_weighted_acc))
+
+                # save the best weights
+                if phase == 'val' and epoch_weighted_acc > best_acc:
+                    best_acc = epoch_weighted_acc
+                    best_model_wts = copy.deepcopy(model.state_dict())
                 if phase == 'val':
-                    val_running_loss += val_loss.item()
-                    val_running_corrects += val_acc
-                    all_preds.append(preds)
-                    all_labels.append(labels)
-                else:
-                    running_loss += loss.item()
-                    running_corrects += torch.sum(preds == labels.data)
-                    epoch_loss = running_loss / len(dataloaders[phase])
-                    epoch_acc = running_corrects / len(dataloaders[phase])
-                    all_preds.append(preds)
-                    all_labels.append(labels)
-                if phase == 'val':
-                    epoch_loss = val_running_loss / len(dataloaders[phase])
-                    epoch_acc = val_running_corrects / len(dataloaders[phase])
+                    val_acc_history.append(epoch_weighted_acc)
 
-            all_labels = torch.cat(all_labels, 0)
-            all_preds = torch.cat(all_preds, 0)
-            epoch_weighted_acc = accuracy_score(all_labels.cpu().numpy(), all_preds.cpu().numpy(),
-                                                sample_weight=compute_sample_weight(class_weights,
-                                                                                    all_labels.cpu().numpy()))
+        time_elapsed = time.time() - since
+        print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+        print('Best val Acc: {:4f}'.format(best_acc))
 
-            print('{} Loss: {:.4f} - Acc: {:.4f} - Weighted Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc,
-                                                                                epoch_weighted_acc))
-
-            # save the best weights
-            if phase == 'val' and epoch_weighted_acc > best_acc:
-                best_acc = epoch_weighted_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-            if phase == 'val':
-                val_acc_history.append(epoch_weighted_acc)
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
-
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model, val_acc_history
+        # load best model weights
+        model.load_state_dict(best_model_wts)
+        return model, val_acc_history
 
 
-for param in model.features.parameters():
-    param.requires_grad = False
+    for param in model.features.parameters():
+        param.requires_grad = False
 
-# initial call to train the classifier
-model.to(device)
-EPOCHS = 30
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.classifier.parameters(), lr=0.0007)
+    # initial call to train the classifier
+    model.to(device)
+    EPOCHS = 50
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.classifier.parameters(), lr=0.0007)
 
-model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
-                                     optimizer=optimizer, num_epochs=EPOCHS)
+    model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
+                                         optimizer=optimizer, num_epochs=EPOCHS)
 
-for param in model.parameters():
-    param.requires_grad = True
+    for param in model.parameters():
+        param.requires_grad = True
 
-# Second Call for fine-tuning of the entire network
-EPOCHS = 30
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.00007)  # We use a smaller learning rate
+    # Second Call for fine-tuning of the entire network
+    EPOCHS = 50
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
 
-model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion, optimizer=optimizer,
-                                     num_epochs=EPOCHS)
-# saving the model
-torch.save(model.state_dict(), '../MVCNN/mvcnn.pt')
+    model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
+                                         optimizer=optimizer,
+                                         num_epochs=EPOCHS)
+    # saving the model
+    torch.save(model.state_dict(), '../Models/mvcnn2.pt')
+else:
+    # Load existing model
+    loaded_dict = torch.load("../Models/mvcnn.pt", map_location=torch.device('cpu'))
+    model.load_state_dict(loaded_dict)
+    model.eval()
 
+
+# Function to get predictions of each seed image
+def mvcnn_pred(seed_name, data_dir, model, device):
+    transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+    seed_fnames = glob.glob(data_dir + f'/* {seed_name}.png')
+    seed = torch.stack([transform(Image.open(fname).convert('RGB')) for fname in seed_fnames]).unsqueeze(0)
+    seed = seed.to(device)
+    pred = torch.nn.functional.softmax(model(seed), dim=1)
+    pred = pred.argmax()
+    pred = pred.item()
+    return pred, {v: k for k, v in class_id_map.items()}[pred]
+
+
+# Get new predictions from segmented seed images using a seed name
+seed_name = 'Seed 2'
+print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
+
+# Iterate through each folder of segmented seeds to find correct and incorrectly classified seeds
+correct = 0
+incorrect = 0
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 9'):
+    for n in range(1, 9):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 9', model, device)[0] == 1:
+            correct = correct + 1
+        else:
+            incorrect = incorrect + 1
+
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 10'):
+    for n in range(1, 9):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device)[0] == 1:
+            correct = correct + 1
+        else:
+            incorrect = incorrect + 1
+
+# Repeat for bad sets
+
+print(f"Number of correctly classified seeds: {correct}")
+print(f"Number of incorrectly classified seeds: {incorrect}")
+print(f"Accuracy: {correct / incorrect + correct}")
