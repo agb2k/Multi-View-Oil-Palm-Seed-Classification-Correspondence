@@ -22,7 +22,7 @@ from torch.autograd import Variable
 print(torch.cuda.is_available())
 
 # Change boolean to determine whether you should train or not
-trainBool = False
+trainBool = True
 
 # Base path for images
 trainSet_path = '../DatasetTest1/Segmented/Train'
