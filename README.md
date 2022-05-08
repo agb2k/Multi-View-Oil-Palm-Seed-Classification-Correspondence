@@ -8,7 +8,7 @@
 # README
 
 All python codes include image_correspondence.py, seed_correspondence_and_segmentation.py, 
-## seed_segmentaion
+## seed_segmentaion.py
 #### To run this code, change the directory path to the seeds folders. The code containes three loops for single image segmenting, all good seeds, and all bad seeds images.
 #### Line 187 is the path of the images directory and 216 is the target file that saves the segmented images path_save
 
