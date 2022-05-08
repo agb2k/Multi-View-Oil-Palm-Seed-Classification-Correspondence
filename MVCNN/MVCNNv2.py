@@ -334,7 +334,7 @@ if trainBool:
     torch.save(model.state_dict(), '../Models/mvcnn2.pt')
 else:
     # Load existing model
-    loaded_dict = torch.load("../Models/mvcnn.pt", map_location=torch.device('cpu'))
+    loaded_dict = torch.load("../Models/mvcnn2.pt", map_location=torch.device('cpu'))
     model.load_state_dict(loaded_dict)
     model.eval()
 
@@ -358,14 +358,20 @@ print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - se
 # Iterate through each folder of segmented seeds to find correct and incorrectly classified seeds
 correct = 0
 incorrect = 0
+truePos = 0
+trueNeg = 0
+falsePos = 0
+falseNeg = 0
 for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 9'):
     for n in range(1, 9):
         seed_name = f"Seed {n}"
         print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
         if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 9', model, device)[0] == 1:
             correct = correct + 1
+            truePos = truePos + 1
         else:
             incorrect = incorrect + 1
+            falsePos = falsePos + 1
 
 for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 10'):
     for n in range(1, 9):
@@ -373,11 +379,58 @@ for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 1
         print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
         if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device)[0] == 1:
             correct = correct + 1
+            truePos = truePos + 1
         else:
             incorrect = incorrect + 1
+            falsePos = falsePos + 1
 
-# Repeat for bad sets
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 10'):
+    for n in range(1, 11):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 10', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 10', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
+
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 11'):
+    for n in range(1, 10):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 11', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 11', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
+
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 12'):
+    for n in range(1, 12):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 12', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 12', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
 
 print(f"Number of correctly classified seeds: {correct}")
 print(f"Number of incorrectly classified seeds: {incorrect}")
-print(f"Accuracy: {correct / incorrect + correct}")
+print(f"Accuracy: {correct / (correct + incorrect)}")
+
+print(trueNeg)
+print(truePos)
+print(falseNeg)
+print(falsePos)
+
+precision = truePos / (truePos + trueNeg)
+print(f"Precision: {precision}")
+
+recall = truePos / (truePos + falseNeg)
+print(f"Recall: {recall}")
+
+f1 = 2*((precision * recall) / (precision + recall))
+print(f"F1: {f1}")
