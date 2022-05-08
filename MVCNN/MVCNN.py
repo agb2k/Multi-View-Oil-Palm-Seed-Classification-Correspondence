@@ -166,10 +166,10 @@ class MVCNN(nn.Module):
         self.classifier = nn.Sequential(
             # Mainly changed the paramters of the functions here
             # nn.Flatten(),
-            nn.Linear(fc_in_features, 2),
-            nn.ReLU(inplace=True),
+            nn.Linear(fc_in_features, 128),
+            nn.ReLU(),
             nn.Dropout(0.4),
-            nn.Linear(2, num_classes),
+            nn.Linear(128, num_classes),
             # Added a logSoftmax for the NLLLoss function
             nn.LogSoftmax(dim=1)
             # nn.Dropout(),
@@ -314,7 +314,7 @@ if trainBool:
     model.to(device)
     EPOCHS = 50
     criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.classifier.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.classifier.parameters(), lr=0.01)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer, num_epochs=EPOCHS)
@@ -325,7 +325,7 @@ if trainBool:
     # Second Call for fine-tuning of the entire network
     EPOCHS = 50
     criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.00001)  # We use a smaller learning rate
+    optimizer = optim.Adam(model.parameters(), lr=0.001)  # We use a smaller learning rate
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer,
