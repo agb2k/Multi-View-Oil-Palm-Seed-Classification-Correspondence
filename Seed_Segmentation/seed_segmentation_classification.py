@@ -66,7 +66,11 @@ def seed_segment(image, path_save, Set, view):
             print(seed_boxes[seed_idx])
             seed_idx += 1 
             idx+=1 
+            # path = os.path.join(path_save,"Set "+ str(Set) + " - " + view + " Bounded Seeds " + str(idx) + '.png')
+            # cv2.imwrite(path, copy)
+            
             new_img=image[y:y+h,x:x+w]
+        
             path = os.path.join(path_save,"Set "+ str(Set) + " - " + view + " Segmented Seed " + str(idx) + '.png')
             cv2.imwrite(path, new_img)
             print(path)
@@ -177,20 +181,20 @@ image_src_box, seed_src_boxes = seed_segment(path_image, path_save, Set, view)
 CSV_SEED_INDIVIDUAL_HEADER = ["Source_path", "Seed_output_path", "top_left_x", "top_left_y", "bottom_right_x", "bottom_right_y"]
 
 #dir
-os.chdir(r"F:/CompV/Multiview_jpg/Good seeds")
+os.chdir(r"F:/CompV/Multiview_jpg/Bad seeds")
 
 #csv output
-outpath = r"F:/CompV/Multiview_jpg/Good seeds" 
-outcsv = os.path.join(outpath, 'Good Seeds.csv')
+outpath = r"F:/CompV/Multiview_jpg/Bad seeds" 
+outcsv = os.path.join(outpath, 'Bad Seeds.csv')
 if not os.path.exists(outcsv):
     with open(outcsv, 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(CSV_SEED_INDIVIDUAL_HEADER)
+'''
 
 
-
-j=1
-while j <11:
+j=9
+while j <10:
     i=1
     while i < 6:
         print("Segmenting...")
@@ -243,9 +247,58 @@ while j <11:
     j += 1
 
 
+'''
 
 
+# j is the first set
+j=10
+while j <13:
+    i=1
+    #loop through the povs
 
-    
+    while i < 5:
+        print("Segmenting...")
+        #output folder
+        if not os.path.exists('Bad seeds - set ' + str(j)):
+            os.mkdir('Bad seeds - set ' + str(j))
+        path_save = "F:\\CompV\\Multiview_jpg\\Bad seeds\\" + "Bad seeds - set " + str(j) 
+        if i == 1:
+            print("Segmenting left")
+            trgt = "left"
+
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
+            seed_segment(path_trgt, path_save, str(j), trgt)
+
+            
+        elif i == 2:
+            print("Segmenting right")
+            trgt = "right"
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
+            seed_segment(path_trgt, path_save, str(j), trgt)
+        
+        elif i==3:
+            print("Segmenting rear")
+            trgt = "rear"
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
+            seed_segment(path_trgt, path_save, str(j), trgt)
+
+            
+        elif i == 4:
+            print("segmenting front")
+            trgt = "front"
+            path_trgt = (trgt + "_S" + str(j) + ".jpg")
+
+            seed_segment(path_trgt, path_save, str(j), trgt)
+            
+        else:
+            print("Something went wrong")
+            
+        
+        i += 1
+    print("check")
+    j += 1
 
 
