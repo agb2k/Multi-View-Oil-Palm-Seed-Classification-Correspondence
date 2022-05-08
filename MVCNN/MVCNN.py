@@ -14,6 +14,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 from sklearn.metrics import accuracy_score
 from sklearn.utils import compute_sample_weight
+from torch.optim import lr_scheduler
 from torch.utils.data import Dataset, DataLoader
 from torchvision import models
 from torch.autograd import Variable
@@ -21,7 +22,7 @@ from torch.autograd import Variable
 print(torch.cuda.is_available())
 
 # Change boolean to determine whether you should train or not
-trainBool = False
+trainBool = True
 
 # Base path for images
 trainSet_path = '../DatasetTest1/Segmented/Train'
@@ -33,6 +34,8 @@ list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
 list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
 list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
+print(f"Number of Bad Test Seeds: {len(list_bad_test_seeds)}")
+print(f"Number of Good Test Seeds: {len(list_good_test_seeds)}")
 
 # Compute weight based on classes
 def compute_sample_weight(class_weights, y):
@@ -43,8 +46,8 @@ def compute_sample_weight(class_weights, y):
 
 # Class Weights used in the weighted accuracy
 class_weights = {
-    0: 0.5,
-    1: 0.5,
+    0: 0.4,
+    1: 0.6,
 }
 
 # Class labels to indices
@@ -111,17 +114,21 @@ class OilPalmSeedsDataset(Dataset):
 # Transformations done on the images
 transform = transforms.Compose(
     [
-        # transforms.ToPILImage(),
-        transforms.Resize([224, 224]),
-        transforms.ToTensor()
-
+        transforms.RandomResizedCrop(size=256, scale=(0.8, 1.0)),
+        transforms.RandomRotation(degrees=15),
+        transforms.RandomHorizontalFlip(),
+        transforms.CenterCrop(size=224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
 test_transform = transforms.Compose(
     [
-        # transforms.ToPILImage(),
-        transforms.Resize([224, 224]),
-        transforms.ToTensor()
+        transforms.Resize(size=256),
+        transforms.CenterCrop(size=224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
 
     ])
 
@@ -133,7 +140,7 @@ base_path = '../DatasetTest1/Segmented/Train/'
 
 # Create training and validation dataset with OilPalmSeedsDataset
 train_dataset = OilPalmSeedsDataset(traindf, base_path=base_path, transform=transform)
-val_dataset = OilPalmSeedsDataset(valdf, base_path=base_path, transform=transform)
+val_dataset = OilPalmSeedsDataset(valdf, base_path=base_path, transform=test_transform)
 
 print('training set', len(train_dataset))
 print('val set', len(val_dataset))
@@ -157,14 +164,26 @@ class MVCNN(nn.Module):
         fc_in_features = resnet.fc.in_features
 
         self.features = nn.Sequential(*list(resnet.children())[:-1])
+
         self.classifier = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(fc_in_features, 2048),
+            # Mainly changed the paramters of the functions here
+            nn.Dropout(0.4),
+            nn.Linear(fc_in_features, 100),
             nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(2048, 2048),
+            nn.Dropout(0.4),
+            nn.Linear(100, 100),
             nn.ReLU(inplace=True),
-            nn.Linear(2048, num_classes)
+            nn.Dropout(0.4),
+            nn.Linear(100, num_classes),
+            # Added a logSoftmax for the NLLLoss function
+            # nn.LogSoftmax(dim=1)
+            # nn.Dropout(),
+            # nn.Linear(fc_in_features, 2048),
+            # nn.ReLU(inplace=True),
+            # nn.Dropout(),
+            # nn.Linear(2048, 2048),
+            # nn.ReLU(inplace=True),
+            # nn.Linear(2048, num_classes)
         )
 
     def forward(self, inputs):
@@ -183,6 +202,8 @@ class MVCNN(nn.Module):
 
 # initializing the model with the number of classes we have
 model = MVCNN(num_classes=2, pretrained=True)
+# print(model)
+# exit()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
@@ -195,7 +216,7 @@ if trainBool:
     # Training function
     def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
         # To calculate the time taken for training
-        since = time.time()
+        start = time.time()
 
         val_acc_history = []
 
@@ -210,64 +231,60 @@ if trainBool:
 
             # Each epoch has a training and validation phase
             for phase in ['train', 'val']:
+                all_preds = []
+                all_labels = []
                 if phase == 'train':
                     model.train()  # Set model to training mode
                 else:
-                    model.eval()  # Set model to evaluate mode
-
+                    model.eval()
                 val_running_loss = 0.0
                 val_running_corrects = 0
                 running_loss = 0.0
                 running_corrects = 0
-                all_preds = []
-                all_labels = []
                 # Iterate over data.
                 for data in dataloaders[phase]:
                     inputs = data['image']
                     labels = data['label']
                     inputs, labels = Variable(inputs), Variable(labels)
                     inputs = inputs.type(torch.FloatTensor).to(device)
-                    labels = labels.type(torch.FloatTensor).to(device)
+                    labels = labels.type(torch.LongTensor).to(device)
                     inputs = torch.unsqueeze(inputs, 1)
-
                     # track history if only in train
+                    optimizer.zero_grad()
                     with torch.set_grad_enabled(phase == 'train'):
                         # Get model outputs and calculate loss
                         outputs = model(inputs)
-                        maxi, preds = torch.max(outputs, 1)
+                        _, preds = torch.max(outputs, 1)
                         preds = preds.type(torch.FloatTensor).to(device)
-                        loss = criterion(input=maxi, target=labels)
+                        loss = criterion(input=outputs, target=labels)
 
                         # backward + optimize only if in training phase
                         if phase == 'train':
-                            optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
+                    running_loss += loss.item() * inputs.size(0)
+                    running_corrects += torch.sum(preds == labels.data)
+                    all_preds.append(preds)
+                    all_labels.append(labels)
                     # Validation part without grad
                     if phase == 'val':
                         with torch.no_grad():
                             outputs = model(inputs)
                             maxi, preds = torch.max(outputs, 1)
                             preds = preds.type(torch.FloatTensor).to(device)
-                            val_loss = criterion(input=maxi, target=labels)
+                            val_loss = criterion(input=outputs, target=labels)
                             val_acc = torch.sum(preds == labels.data)
 
                         # statistics
-                    if phase == 'val':
-                        val_running_loss += val_loss.item()
-                        val_running_corrects += val_acc
-                        all_preds.append(preds)
-                        all_labels.append(labels)
-                    else:
-                        running_loss += loss.item()
-                        running_corrects += torch.sum(preds == labels.data)
-                        epoch_loss = running_loss / len(dataloaders[phase])
-                        epoch_acc = running_corrects / len(dataloaders[phase])
-                        all_preds.append(preds)
-                        all_labels.append(labels)
-                    if phase == 'val':
-                        epoch_loss = val_running_loss / len(dataloaders[phase])
-                        epoch_acc = val_running_corrects / len(dataloaders[phase])
+                    # if phase == 'val':
+                    #     val_running_loss += val_loss.item()
+                    #     val_running_corrects += val_acc
+
+                epoch_loss = running_loss / len(dataloaders[phase])
+                epoch_acc = running_corrects / len(dataloaders[phase])
+                # if phase == 'val':
+                #     epoch_loss = val_running_loss / len(dataloaders[phase])
+                #     epoch_acc = val_running_corrects / len(dataloaders[phase])
 
                 all_labels = torch.cat(all_labels, 0)
                 all_preds = torch.cat(all_preds, 0)
@@ -285,7 +302,7 @@ if trainBool:
                 if phase == 'val':
                     val_acc_history.append(epoch_weighted_acc)
 
-        time_elapsed = time.time() - since
+        time_elapsed = time.time() - start
         print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
         print('Best val Acc: {:4f}'.format(best_acc))
 
@@ -299,10 +316,10 @@ if trainBool:
 
     # initial call to train the classifier
     model.to(device)
-    EPOCHS = 50
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.classifier.parameters(), lr=0.0007)
-
+    EPOCHS = 40
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.classifier.parameters())
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.0001)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer, num_epochs=EPOCHS)
 
@@ -310,25 +327,26 @@ if trainBool:
         param.requires_grad = True
 
     # Second Call for fine-tuning of the entire network
-    EPOCHS = 50
-    criterion = nn.BCEWithLogitsLoss()
+    EPOCHS = 40
+    # weight = torch.tensor([0.4, 0.6]).to(device)
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
-
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.00001)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer,
                                          num_epochs=EPOCHS)
     # saving the model
-    torch.save(model.state_dict(), '../Models/mvcnn2.pt')
+    torch.save(model.state_dict(), '../Models/mvcnn4.pt')
 else:
     # Load existing model
-    loaded_dict = torch.load("../Models/mvcnn.pt", map_location=torch.device('cpu'))
+    loaded_dict = torch.load("../Models/mvcnn2.pt")
     model.load_state_dict(loaded_dict)
     model.eval()
 
 
 # Function to get predictions of each seed image
 def mvcnn_pred(seed_name, data_dir, model, device):
-    transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+    transform = test_transform
     seed_fnames = glob.glob(data_dir + f'/* {seed_name}.png')
     seed = torch.stack([transform(Image.open(fname).convert('RGB')) for fname in seed_fnames]).unsqueeze(0)
     seed = seed.to(device)
@@ -345,14 +363,20 @@ print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - se
 # Iterate through each folder of segmented seeds to find correct and incorrectly classified seeds
 correct = 0
 incorrect = 0
+truePos = 0
+trueNeg = 0
+falsePos = 0
+falseNeg = 0
 for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 9'):
     for n in range(1, 9):
         seed_name = f"Seed {n}"
         print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
         if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 9', model, device)[0] == 1:
             correct = correct + 1
+            truePos = truePos + 1
         else:
             incorrect = incorrect + 1
+            falsePos = falsePos + 1
 
 for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 10'):
     for n in range(1, 9):
@@ -360,11 +384,58 @@ for files in glob.iglob(f'../Seed_Segmentation_Classification/Good seeds - set 1
         print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device))
         if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Good seeds - set 10', model, device)[0] == 1:
             correct = correct + 1
+            truePos = truePos + 1
         else:
             incorrect = incorrect + 1
+            falsePos = falsePos + 1
 
-# Repeat for bad sets
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 10'):
+    for n in range(1, 11):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 10', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 10', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
+
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 11'):
+    for n in range(1, 10):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 11', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 11', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
+
+for files in glob.iglob(f'../Seed_Segmentation_Classification/Bad seeds - set 12'):
+    for n in range(1, 12):
+        seed_name = f"Seed {n}"
+        print(mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 12', model, device))
+        if mvcnn_pred(seed_name, '../Seed_Segmentation_Classification/Bad seeds - set 12', model, device)[0] == 0:
+            correct = correct + 1
+            trueNeg = trueNeg + 1
+        else:
+            incorrect = incorrect + 1
+            falseNeg = falseNeg + 1
 
 print(f"Number of correctly classified seeds: {correct}")
 print(f"Number of incorrectly classified seeds: {incorrect}")
-print(f"Accuracy: {correct / incorrect + correct}")
+print(f"Accuracy: {correct / (correct + incorrect)}")
+
+print(trueNeg)
+print(truePos)
+print(falseNeg)
+print(falsePos)
+
+precision = truePos / (truePos + trueNeg)
+print(f"Precision: {precision}")
+
+recall = truePos / (truePos + falseNeg)
+print(f"Recall: {recall}")
+
+f1 = 2 * ((precision * recall) / (precision + recall))
+print(f"F1: {f1}")
