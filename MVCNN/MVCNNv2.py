@@ -262,7 +262,7 @@ if trainBool:
                             outputs = model(inputs)
                             maxi, preds = torch.max(outputs, 1)
                             preds = preds.type(torch.FloatTensor).to(device)
-                            val_loss = criterion(input=maxi, target=labels)
+                            val_loss = criterion(input=outputs, target=labels)
                             val_acc = torch.sum(preds == labels.data)
 
                         # statistics
