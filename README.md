@@ -8,7 +8,9 @@
 # README
 
 All python codes include image_correspondence.py, seed_correspondence_and_segmentation.py, 
-
+## seed_segmentaion.py
+#### To run this code, change the directory path to the seeds folders. The code containes three loops for single image segmenting, all good seeds, and all bad seeds images.
+#### Line 187 is the path of the images directory and 216 is the target file that saves the segmented images path_save
 
 ## image_correspondence.py
 
@@ -22,8 +24,11 @@ All python codes include image_correspondence.py, seed_correspondence_and_segmen
 ## seed_correspondence_and_segmentation.py
 
 ##### To run the script:
-        1. change the directory to the Multiview_jpg folder
+        1. change the directory to the Multiview_jpg folder for three paths: chdir('..'), outpath, and path_save 
         2. uncomment the wanted sets loop from line 290
         3. Run the script
 ##### The outputs are the segmented seeds corresponded from the top view to the target view
     
+## MVCNN.py
+##### To run the code, change the file locations in line 28, 29, 58, 70, 138, 140, 150. During training, pre-processed segmented images are taken as an input. The segmentation was
+##### Done using the seed_correspondence_and_segmentation.py code. After training the model, it will automatically test the model using the assigned test images
