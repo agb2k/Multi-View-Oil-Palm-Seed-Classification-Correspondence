@@ -165,13 +165,16 @@ class MVCNN(nn.Module):
 
         self.classifier = nn.Sequential(
             # Mainly changed the paramters of the functions here
-            # nn.Flatten(),
-            nn.Linear(fc_in_features, 128),
-            nn.ReLU(),
             nn.Dropout(0.4),
-            nn.Linear(128, num_classes),
+            nn.Linear(fc_in_features, 100),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.Linear(100, 100),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.Linear(100, num_classes),
             # Added a logSoftmax for the NLLLoss function
-            nn.LogSoftmax(dim=1)
+            # nn.LogSoftmax(dim=1)
             # nn.Dropout(),
             # nn.Linear(fc_in_features, 2048),
             # nn.ReLU(inplace=True),
@@ -223,10 +226,6 @@ if trainBool:
         for epoch in range(1, num_epochs + 1):
             print('Epoch {}/{}'.format(epoch, num_epochs))
             print('-' * 10)
-            val_running_loss = 0.0
-            val_running_corrects = 0
-            running_loss = 0.0
-            running_corrects = 0
 
             # Each epoch has a training and validation phase
             for phase in ['train', 'val']:
@@ -234,6 +233,12 @@ if trainBool:
                 all_labels = []
                 if phase == 'train':
                     model.train()  # Set model to training mode
+                else:
+                    model.eval()
+                val_running_loss = 0.0
+                val_running_corrects = 0
+                running_loss = 0.0
+                running_corrects = 0
                 # Iterate over data.
                 for data in dataloaders[phase]:
                     inputs = data['image']
@@ -243,6 +248,7 @@ if trainBool:
                     labels = labels.type(torch.LongTensor).to(device)
                     inputs = torch.unsqueeze(inputs, 1)
                     # track history if only in train
+                    optimizer.zero_grad()
                     with torch.set_grad_enabled(phase == 'train'):
                         # Get model outputs and calculate loss
                         outputs = model(inputs)
@@ -252,35 +258,31 @@ if trainBool:
 
                         # backward + optimize only if in training phase
                         if phase == 'train':
-                            optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
+                    running_loss += loss.item() * inputs.size(0)
+                    running_corrects += torch.sum(preds == labels.data)
+                    all_preds.append(preds)
+                    all_labels.append(labels)
                     # Validation part without grad
                     if phase == 'val':
-                        model.eval()
                         with torch.no_grad():
                             outputs = model(inputs)
                             maxi, preds = torch.max(outputs, 1)
                             preds = preds.type(torch.FloatTensor).to(device)
-                            val_loss = criterion(input=maxi, target=labels)
+                            val_loss = criterion(input=outputs, target=labels)
                             val_acc = torch.sum(preds == labels.data)
 
                         # statistics
-                    if phase == 'val':
-                        val_running_loss += val_loss.item()
-                        val_running_corrects += val_acc
-                        all_preds.append(preds)
-                        all_labels.append(labels)
-                    else:
-                        running_loss += loss.item() * inputs.size(0)
-                        running_corrects += torch.sum(preds == labels.data)
-                        epoch_loss = running_loss / len(dataloaders[phase])
-                        epoch_acc = running_corrects / len(dataloaders[phase])
-                        all_preds.append(preds)
-                        all_labels.append(labels)
-                    if phase == 'val':
-                        epoch_loss = val_running_loss / len(dataloaders[phase])
-                        epoch_acc = val_running_corrects / len(dataloaders[phase])
+                    # if phase == 'val':
+                    #     val_running_loss += val_loss.item()
+                    #     val_running_corrects += val_acc
+
+                epoch_loss = running_loss / len(dataloaders[phase])
+                epoch_acc = running_corrects / len(dataloaders[phase])
+                # if phase == 'val':
+                #     epoch_loss = val_running_loss / len(dataloaders[phase])
+                #     epoch_acc = val_running_corrects / len(dataloaders[phase])
 
                 all_labels = torch.cat(all_labels, 0)
                 all_preds = torch.cat(all_preds, 0)
@@ -312,10 +314,10 @@ if trainBool:
 
     # initial call to train the classifier
     model.to(device)
-    EPOCHS = 50
-    criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.classifier.parameters(), lr=0.01)
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    EPOCHS = 40
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.classifier.parameters())
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.0001)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer, num_epochs=EPOCHS)
 
@@ -323,15 +325,16 @@ if trainBool:
         param.requires_grad = True
 
     # Second Call for fine-tuning of the entire network
-    EPOCHS = 50
-    criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)  # We use a smaller learning rate
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    EPOCHS = 40
+    # weight = torch.tensor([0.4, 0.6]).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.00005)  # We use a smaller learning rate
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.00001)
     model, val_acc_history = train_model(model=model, dataloaders=data_loaders, criterion=criterion,
                                          optimizer=optimizer,
                                          num_epochs=EPOCHS)
     # saving the model
-    torch.save(model.state_dict(), '../Models/mvcnn2.pt')
+    torch.save(model.state_dict(), '../Models/mvcnn3.pt')
 else:
     # Load existing model
     loaded_dict = torch.load("../Models/mvcnn2.pt", map_location=torch.device('cpu'))
@@ -432,8 +435,5 @@ print(f"Precision: {precision}")
 recall = truePos / (truePos + falseNeg)
 print(f"Recall: {recall}")
 
-f1 = 2*((precision * recall) / (precision + recall))
+f1 = 2 * ((precision * recall) / (precision + recall))
 print(f"F1: {f1}")
-
-
-
