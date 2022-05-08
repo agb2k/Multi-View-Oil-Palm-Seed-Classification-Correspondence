@@ -336,7 +336,7 @@ if trainBool:
                                          optimizer=optimizer,
                                          num_epochs=EPOCHS)
     # saving the model
-    torch.save(model.state_dict(), '../Models/mvcnn3.pt')
+    torch.save(model.state_dict(), '../Models/mvcnn4.pt')
 else:
     # Load existing model
     loaded_dict = torch.load("../Models/mvcnn2.pt")
