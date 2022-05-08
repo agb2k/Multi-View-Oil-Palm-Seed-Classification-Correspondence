@@ -34,6 +34,8 @@ list_bad_train_seeds = sorted(os.listdir(trainSet_path + '/BadSeed'))
 list_good_test_seeds = sorted(os.listdir(testSet_path + '/GoodSeed'))
 list_bad_test_seeds = sorted(os.listdir(testSet_path + '/BadSeed'))
 
+print(f"Number of Bad Test Seeds: {len(list_bad_test_seeds)}")
+print(f"Number of Good Test Seeds: {len(list_good_test_seeds)}")
 
 # Compute weight based on classes
 def compute_sample_weight(class_weights, y):
@@ -44,8 +46,8 @@ def compute_sample_weight(class_weights, y):
 
 # Class Weights used in the weighted accuracy
 class_weights = {
-    0: 0.5,
-    1: 0.5,
+    0: 0.4,
+    1: 0.6,
 }
 
 # Class labels to indices
@@ -337,7 +339,7 @@ if trainBool:
     torch.save(model.state_dict(), '../Models/mvcnn3.pt')
 else:
     # Load existing model
-    loaded_dict = torch.load("../Models/mvcnn2.pt", map_location=torch.device('cpu'))
+    loaded_dict = torch.load("../Models/mvcnn2.pt")
     model.load_state_dict(loaded_dict)
     model.eval()
 
